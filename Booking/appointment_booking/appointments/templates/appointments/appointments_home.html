@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Calendar</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px;
+        }
+
+        #calendar {
+            width: 100%;
+            max-width: 600px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .calendar-header button {
+            padding: 5px 10px;
+            border: none;
+            background-color: #007BFF;
+            color: white;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+
+        .calendar-header button:hover {
+            background-color: #0056b3;
+        }
+
+        .calendar-days {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            margin-top: 10px;
+            text-align: center;
+        }
+
+        .day {
+            padding: 10px;
+            border: 1px solid #ddd;
+            cursor: pointer;
+        }
+
+        .day:hover {
+            background-color: #f4f4f4;
+        }
+
+        .today {
+            background-color: #007BFF;
+            color: white;
+        }
+
+        .time-slots {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .time-slot {
+            padding: 5px;
+            margin: 5px;
+            background-color: #f4f4f4;
+            cursor: pointer;
+        }
+
+        .time-slot:hover {
+            background-color: #007BFF;
+            color: white;
+        }
+
+        .selected-time {
+            background-color: #28a745;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>Custom Calendar</h1>
+    <div id="calendar">
+        <h2>Available Dates</h2>
+        <div id="calendar-days" class="calendar-days">
+            <!-- Calendar days will be dynamically added here -->
+        </div>
+    </div>
+    
+    <div id="time-slots" class="time-slots">
+        <h3>Available Time Slots</h3>
+        <div id="time-slots-list"></div>
+    </div>
+    
+</body>
+</html>

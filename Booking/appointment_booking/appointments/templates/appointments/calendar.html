@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Calendar</title>
+    <style>
+        /* Add basic styling for the calendar */
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px;
+        }
+
+        #calendar {
+            width: 100%;
+            max-width: 600px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .calendar-header button {
+            padding: 5px 10px;
+            border: none;
+            background-color: #007BFF;
+            color: white;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+
+        .calendar-header button:hover {
+            background-color: #0056b3;
+        }
+
+        .calendar-days {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            margin-top: 10px;
+            text-align: center;
+        }
+
+        .day {
+            padding: 10px;
+            border: 1px solid #ddd;
+            cursor: pointer;
+        }
+
+        .day:hover {
+            background-color: #f4f4f4;
+        }
+
+        .today {
+            background-color: #007BFF;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>Custom Calendar</h1>
+    <div id="calendar">
+        <div class="calendar-header">
+            <button id="prev">Previous</button>
+            <h2 id="month-year"></h2>
+            <button id="next">Next</button>
+        </div>
+        <div class="calendar-days" id="calendar-days">
+            <!-- Days will be dynamically added here -->
+        </div>
+    </div>
+
+    <script>
+        const calendarDays = document.getElementById('calendar-days');
+        const monthYear = document.getElementById('month-year');
+        const prevButton = document.getElementById('prev');
+        const nextButton = document.getElementById('next');
+
+        let date = new Date();
+
+        // Render the calendar
+        function renderCalendar() {
+            const currentMonth = date.getMonth();
+            const currentYear = date.getFullYear();
+
+            const today = new Date();
+
+            const monthNames = [
+                "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", 
+                "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+            ];
+            monthYear.textContent = `${monthNames[currentMonth]} ${currentYear}`;
+
+            calendarDays.innerHTML = ''; // Clear previous days
+
+            const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+            const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+            for (let i = 0; i < firstDay; i++) {
+                const blankDay = document.createElement('div');
+                blankDay.classList.add('day');
+                calendarDays.appendChild(blankDay);
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dayElement = document.createElement('div');
+                dayElement.classList.add('day');
+                dayElement.textContent = day;
+
+                const dateToCheck = new Date(currentYear, currentMonth, day);
+
+                if (dateToCheck < today) {
+                    dayElement.style.color = "#ccc"; // Disable past days visually
+                    dayElement.style.pointerEvents = "none"; // Prevent clicks
+                } else {
+                    dayElement.addEventListener('click', () => {
+                        fetchAvailableSlots(dateToCheck);
+                    });
+                }
+
+                if (
+                    day === today.getDate() &&
+                    currentMonth === today.getMonth() &&
+                    currentYear === today.getFullYear()
+                ) {
+                    dayElement.classList.add('today');
+                }
+
+                calendarDays.appendChild(dayElement);
+            }
+        }
+
+        // Fetch available slots from the API
+        function fetchAvailableSlots(date) {
+            fetch(`/api/available-slots/?date=${date.toISOString()}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.available_slots) {
+                        console.log('Available Slots:', data.available_slots);
+                    } else {
+                        console.error('No available slots for this date.');
+                    }
+                })
+                .catch(error => console.error('Error fetching available slots:', error));
+        }
+
+        // Navigation handlers
+        prevButton.addEventListener('click', () => {
+            date.setMonth(date.getMonth() - 1);
+            renderCalendar();
+        });
+
+        nextButton.addEventListener('click', () => {
+            date.setMonth(date.getMonth() + 1);
+            renderCalendar();
+        });
+
+        // Initial render
+        renderCalendar();
+    </script>
+</body>
+</html>
