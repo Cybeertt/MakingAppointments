@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Custom Calendar</title>
     <style>
-        /* Add basic styling for the calendar */
+        /* Calendar Styles */
         body {
             font-family: Arial, sans-serif;
             display: flex;
@@ -63,6 +63,63 @@
             background-color: #007BFF;
             color: white;
         }
+
+        #available-hours {
+            margin-top: 20px;
+            width: 100%;
+            max-width: 600px;
+            text-align: center;
+        }
+
+        .slot {
+            padding: 10px;
+            margin: 5px;
+            display: inline-block;
+            border: 1px solid #007BFF;
+            border-radius: 5px;
+            background-color: #f0f8ff;
+            cursor: pointer;
+        }
+
+        .slot:hover {
+            background-color: #007BFF;
+            color: white;
+        }
+
+        .no-slots {
+            margin-top: 10px;
+            color: #888;
+        }
+
+        #form-container {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        #form-container input {
+            margin: 5px;
+            padding: 10px;
+            font-size: 1rem;
+        }
+
+        #form-container button {
+            padding: 10px 20px;
+            font-size: 1rem;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        #form-container button:hover {
+            background-color: #218838;
+        }
+
+        .slot.selected {
+            background-color: #007BFF;
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -73,33 +130,45 @@
             <h2 id="month-year"></h2>
             <button id="next">Next</button>
         </div>
-        <div class="calendar-days" id="calendar-days">
-            <!-- Days will be dynamically added here -->
-        </div>
+        <div class="calendar-days" id="calendar-days"></div>
+    </div>
+
+    <div id="available-hours">
+        <h2>Available Hours</h2>
+        <div id="slots-container"></div>
+    </div>
+
+    <div id="form-container" style="display:none;">
+        <h3>Book an Appointment for <span id="selected-date"></span></h3>
+        <input type="email" id="email" placeholder="Enter your email" required />
+        <input type="tel" id="phone" placeholder="Enter your phone number" required />
+        <button id="submit-appointment">Submit</button>
     </div>
 
     <script>
+        // JavaScript code for calendar rendering and appointment booking
         const calendarDays = document.getElementById('calendar-days');
         const monthYear = document.getElementById('month-year');
         const prevButton = document.getElementById('prev');
         const nextButton = document.getElementById('next');
+        const slotsContainer = document.getElementById('slots-container');
+        const formContainer = document.getElementById('form-container');
+        const selectedDateElem = document.getElementById('selected-date');
+        const submitButton = document.getElementById('submit-appointment');
 
         let date = new Date();
 
-        // Render the calendar
         function renderCalendar() {
             const currentMonth = date.getMonth();
             const currentYear = date.getFullYear();
 
             const today = new Date();
-
             const monthNames = [
-                "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", 
-                "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"
             ];
             monthYear.textContent = `${monthNames[currentMonth]} ${currentYear}`;
-
-            calendarDays.innerHTML = ''; // Clear previous days
+            calendarDays.innerHTML = '';
 
             const firstDay = new Date(currentYear, currentMonth, 1).getDay();
             const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
@@ -116,10 +185,9 @@
                 dayElement.textContent = day;
 
                 const dateToCheck = new Date(currentYear, currentMonth, day);
-
                 if (dateToCheck < today) {
-                    dayElement.style.color = "#ccc"; // Disable past days visually
-                    dayElement.style.pointerEvents = "none"; // Prevent clicks
+                    dayElement.style.color = "#ccc";
+                    dayElement.style.pointerEvents = "none";
                 } else {
                     dayElement.addEventListener('click', () => {
                         fetchAvailableSlots(dateToCheck);
@@ -138,21 +206,83 @@
             }
         }
 
-        // Fetch available slots from the API
         function fetchAvailableSlots(date) {
-            fetch(`/api/available-slots/?date=${date.toISOString()}`)
+            const formattedDate = date.toISOString().split('T')[0];
+            fetch(`/appointments/available-slots/?date=${formattedDate}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.available_slots) {
-                        console.log('Available Slots:', data.available_slots);
+                        displayAvailableSlots(data.available_slots, formattedDate);
                     } else {
-                        console.error('No available slots for this date.');
+                        slotsContainer.innerHTML = '<p class="no-slots">No available slots for this day.</p>';
                     }
                 })
-                .catch(error => console.error('Error fetching available slots:', error));
+                .catch(error => console.error('Error fetching slots:', error));
         }
 
-        // Navigation handlers
+        function displayAvailableSlots(slots, selectedDate) {
+            slotsContainer.innerHTML = '';
+            if (slots.length === 0) {
+                slotsContainer.innerHTML = '<p class="no-slots">No available slots for this day.</p>';
+                return;
+            }
+            slots.forEach(slot => {
+                const slotElement = document.createElement('div');
+                slotElement.classList.add('slot');
+                slotElement.textContent = `${slot.start_time} - ${slot.end_time}`;
+                slotElement.dataset.startTime = slot.start_time;
+                slotElement.dataset.endTime = slot.end_time;
+
+                slotElement.addEventListener('click', () => {
+                    document.querySelectorAll('.slot').forEach(s => s.classList.remove('selected'));
+                    slotElement.classList.add('selected');
+                    formContainer.style.display = 'block';
+                    selectedDateElem.textContent = selectedDate;
+                });
+
+                slotsContainer.appendChild(slotElement);
+            });
+        }
+
+        submitButton.addEventListener('click', () => {
+            const email = document.getElementById('email').value;
+            const phone = document.getElementById('phone').value;
+            const selectedDate = selectedDateElem.textContent;
+            const selectedSlot = document.querySelector('.slot.selected');
+            if (!selectedSlot) return alert("Please select a slot.");
+
+            const startTime = selectedSlot.dataset.startTime;
+            const endTime = selectedSlot.dataset.endTime;
+            if (!email || !phone) return alert("Fill in all fields.");
+
+            fetch('/appointments/book-appointment/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({
+                    email, phone_number: phone, date: selectedDate, start_time: startTime, end_time: endTime
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.message) {
+                        alert(data.message);
+                        formContainer.style.display = 'none';
+                    } else alert('Error: ' + data.error);
+                })
+                .catch(error => console.error('Error booking appointment:', error));
+        });
+
+        function getCookie(name) {
+            const cookies = document.cookie.split(';').map(c => c.trim());
+            for (const cookie of cookies) {
+                if (cookie.startsWith(name + '=')) return decodeURIComponent(cookie.split('=')[1]);
+            }
+            return null;
+        }
+
         prevButton.addEventListener('click', () => {
             date.setMonth(date.getMonth() - 1);
             renderCalendar();
@@ -163,7 +293,6 @@
             renderCalendar();
         });
 
-        // Initial render
         renderCalendar();
     </script>
 </body>

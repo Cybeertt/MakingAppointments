@@ -3,7 +3,7 @@ from django.contrib import admin
 from .models import Appointment
 
 class AppointmentAdmin(admin.ModelAdmin):
-    list_display = ['date', 'hour', 'minute', 'user_name', 'email', 'phone_number']
+    list_display = ['date', 'hour', 'minute', 'email', 'phone_number']
 
     # Method to get the hour from the start_time
     def hour(self, obj):
