@@ -107,6 +107,28 @@ def get_available2_slots(request):
     return Response(serializer.data)
 
 @api_view(['GET'])
+def get_available_dates(request):
+    if request.method == 'GET':
+        try:
+            # Extract the year and month from the query parameters
+            year = int(request.GET.get('year'))
+            month = int(request.GET.get('month'))
+
+            # Get all available slots for the specified month
+            available_slots = AvailableSlot.objects.filter(
+                date__year=year,
+                date__month=month,
+                is_booked=False
+            ).values_list('date', flat=True).distinct()
+
+            # Return the list of available dates
+            available_dates = list(available_slots)
+            return JsonResponse({'available_dates': available_dates}, status=200)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return JsonResponse({'error': 'Invalid request method'}, status=400)
+
+@api_view(['GET'])
 def get_available_slots(request):
     """
     Fetch available slots for a given date.
@@ -279,3 +301,40 @@ def appointment_list_view(request):
         'available_slots': available_slots,
     }
     return render(request, 'appointments/appointment_list.html', context)
+
+
+def create_available_slots(start_date, end_date, start_time, end_time):
+    """
+    Creates available slots for the specified date range and time range with a 1-hour duration.
+
+    :param start_date: Start date in 'YYYY-MM-DD' format.
+    :param end_date: End date in 'YYYY-MM-DD' format.
+    :param start_time: Start time in 'HH:MM:SS' format.
+    :param end_time: End time in 'HH:MM:SS' format.
+    """
+    start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+    start_time_obj = datetime.strptime(start_time, "%H:%M:%S").time()
+    end_time_obj = datetime.strptime(end_time, "%H:%M:%S").time()
+
+    delta = timedelta(days=1)
+    current_date = start_date_obj
+
+    while current_date <= end_date_obj:
+        current_time = datetime.combine(current_date, start_time_obj)
+        end_time_datetime = datetime.combine(current_date, end_time_obj)
+
+        while current_time < end_time_datetime:
+            next_time = current_time + timedelta(hours=1)  # 1-hour slots
+            AvailableSlot.objects.create(
+                date=current_date,
+                start_time=current_time.time(),
+                end_time=next_time.time(),
+                is_booked=False
+            )
+            current_time = next_time
+
+        current_date += delta
+
+# Example usage:
+#create_available_slots('2025-1-13', '2025-1-17', '16:00:00', '20:00:00')

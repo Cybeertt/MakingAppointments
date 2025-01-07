@@ -49,21 +49,6 @@
             text-align: center;
         }
 
-        .day {
-            padding: 10px;
-            border: 1px solid #ddd;
-            cursor: pointer;
-        }
-
-        .day:hover {
-            background-color: #f4f4f4;
-        }
-
-        .today {
-            background-color: #007BFF;
-            color: white;
-        }
-
         #available-hours {
             margin-top: 20px;
             width: 100%;
@@ -120,6 +105,32 @@
             background-color: #007BFF;
             color: white;
         }
+
+        .day {
+            position: relative;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+        }
+        
+        .day div {
+            position: absolute;
+            bottom: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        
+        .today {
+            background-color: #007BFF;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .today:hover {
+            background-color: #0056b3;
+        }
+        
+
     </style>
 </head>
 <body>
@@ -229,7 +240,7 @@
             slots.forEach(slot => {
                 const slotElement = document.createElement('div');
                 slotElement.classList.add('slot');
-                slotElement.textContent = `${slot.start_time} - ${slot.end_time}`;
+                slotElement.textContent = `${slot.start_time}`;
                 slotElement.dataset.startTime = slot.start_time;
                 slotElement.dataset.endTime = slot.end_time;
 
