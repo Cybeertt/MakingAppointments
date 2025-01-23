@@ -107,22 +107,22 @@ def get_available2_slots(request):
     return Response(serializer.data)
 
 @api_view(['GET'])
-def get_available_dates(request):
+def available_dates(request):
     if request.method == 'GET':
         try:
-            # Extract the year and month from the query parameters
+            # Parse the year and month from request parameters
             year = int(request.GET.get('year'))
             month = int(request.GET.get('month'))
 
-            # Get all available slots for the specified month
+            # Query for available slots in the given month
             available_slots = AvailableSlot.objects.filter(
                 date__year=year,
                 date__month=month,
                 is_booked=False
             ).values_list('date', flat=True).distinct()
 
-            # Return the list of available dates
-            available_dates = list(available_slots)
+            # Convert dates to a list of strings (ISO format for easier parsing in JS)
+            available_dates = [date.strftime('%Y-%m-%d') for date in available_slots]
             return JsonResponse({'available_dates': available_dates}, status=200)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=400)
@@ -337,4 +337,4 @@ def create_available_slots(start_date, end_date, start_time, end_time):
         current_date += delta
 
 # Example usage:
-#create_available_slots('2025-1-13', '2025-1-17', '16:00:00', '20:00:00')
+#create_available_slots('2025-1-20', '2025-2-28', '16:00:00', '20:00:00')

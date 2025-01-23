@@ -5,6 +5,7 @@ urlpatterns = [
     path('', views.calendar_view, name='calendar_view'),  # Home page showing the calendar
     path('appointment-list/', views.appointment_list_view, name='appointment_list'),
     path('available-slots/', views.get_available_slots, name='get_available_slots'),
+    path('available-dates/', views.available_dates, name='available_dates'),
     path('available-slots-date/', views.get_available_slots, name='get_available_slots_date'),
     path('available-slots/post', views.post_available_slots, name='post_available_slots'),  # This allows both GET and POST
     path('appointments/', views.appointments, name='appointments'),  # List or create an appointment
