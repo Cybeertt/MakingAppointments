@@ -1,0 +1,66 @@
+{% extends 'admin/base.html' %}
+{% load static %}
+
+{% block extrahead %}
+    <link href='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css' rel='stylesheet' />
+{% endblock %}
+
+{% block content %}
+    <div id="content-main">
+        <h1>Doctor Dashboard</h1>
+
+        <div class="module">
+            <h2>Calendar</h2>
+            <div id="calendar"></div>
+        </div>
+
+        <div class="module">
+            <h2>Appointments</h2>
+            {% if appointments %}
+                <table id="appointment-list">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Time</th>
+                            <th>Email</th>
+                            <th>Location</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for appointment in appointments %}
+                            <tr>
+                                <td>{{ appointment.date }}</td>
+                                <td>{{ appointment.start_time }} - {{ appointment.end_time }}</td>
+                                <td>{{ appointment.email }}</td>
+                                <td>{{ appointment.slot.location.name }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>No appointments found.</p>
+            {% endif %}
+        </div>
+    </div>
+{% endblock %}
+
+{% block extrajs %}
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js'></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var calendarEl = document.getElementById('calendar');
+            var calendar = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'dayGridMonth',
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'dayGridMonth,timeGridWeek,timeGridDay'
+                },
+                events: JSON.parse('{{ events|safe }}')
+            });
+            console.log("Raw Events String:", '{{ events|safe }}');
+            console.log("FullCalendar Events:", JSON.parse('{{ events|safe }}'));
+            calendar.render();
+        });
+    </script>
+{% endblock %}

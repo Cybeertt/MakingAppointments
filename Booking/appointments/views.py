@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime, timedelta
 from django.shortcuts import render
 from rest_framework.decorators import api_view
@@ -5,26 +6,40 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from .models import Appointment, AvailableSlot
-from django.utils.timezone import make_aware
-from django.core.mail import send_mail
+from django.db.models import Count
+from .models import Appointment, AvailableSlot, Location
 import json
-from django.http import JsonResponse
 import os
-from googleapiclient.discovery import build
-from google.oauth2.service_account import Credentials
 from django.http import JsonResponse
 from .serializers import AppointmentSerializer, AvailableSlotSerializer
+from twilio.rest import Client
 
 # Path to your credentials file
 CREDENTIALS_FILE = os.path.join(os.path.dirname(__file__), 'google_credentials.json')
 
-from .models import Appointment
+# Twilio configuration from environment (do NOT hardcode secrets)
+TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID')
+TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN')
+TWILIO_FROM_NUMBER = os.environ.get('TWILIO_FROM_NUMBER')
+DOCTOR_PHONE = os.environ.get('DOCTOR_PHONE')  # Doctor's phone for notifications
 
-from datetime import datetime
-from rest_framework.response import Response
-from rest_framework.decorators import api_view
-from .models import AvailableSlot
+client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN else None
+
+def send_sms(to_phone_number, message_body):
+    if not client or not TWILIO_FROM_NUMBER:
+        return None
+    try:
+        message = client.messages.create(
+            body=message_body,
+            from_=TWILIO_FROM_NUMBER,
+            to=to_phone_number
+        )
+        return message.sid
+    except Exception:
+        # Optionally log the error; return None to avoid breaking booking flow
+        return None
+
+
 
 @api_view(['GET'])
 def get_available_slots_date(request):
@@ -62,36 +77,53 @@ def book_appointment(request):
             date = data.get('date')
             start_time = data.get('start_time')
             end_time = data.get('end_time')
+            location_id = data.get('location')
 
-            if not email or not phone_number or not date or not start_time or not end_time:
+            if not all([email, phone_number, date, start_time, end_time, location_id]):
                 return JsonResponse({'error': 'Missing required fields'}, status=400)
 
-            # Check if the slot exists
+            # Check if the slot exists and is not booked
             try:
-                slot = AvailableSlot.objects.get(date=date, start_time=start_time, end_time=end_time)
-                if slot.is_booked:
-                    return JsonResponse({'error': 'Slot already booked'}, status=400)
+                location = Location.objects.get(pk=location_id)
+                slot = AvailableSlot.objects.get(
+                    date=date,
+                    start_time=start_time,
+                    end_time=end_time,
+                    location=location,
+                    is_booked=False
+                )
+            except Location.DoesNotExist:
+                return JsonResponse({'error': 'Invalid location'}, status=400)
             except AvailableSlot.DoesNotExist:
-                return JsonResponse({'error': 'Selected slot not available'}, status=400)
-
-            # Check if an appointment already exists
-            if Appointment.objects.filter(date=date, start_time=start_time, end_time=end_time).exists():
-                return JsonResponse({'error': 'Appointment already exists for the selected slot'}, status=400)
+                return JsonResponse({'error': 'Selected slot not available or already booked'}, status=400)
 
             # Create the appointment
-            Appointment.objects.create(
+            appointment = Appointment.objects.create(
                 email=email,
                 phone_number=phone_number,
                 date=date,
                 start_time=start_time,
-                end_time=end_time
+                end_time=end_time,
+                slot=slot  # Link to the slot
             )
+
             # Mark the slot as booked
             slot.is_booked = True
             slot.save()
 
+            # Send confirmation SMS to patient
+            message_body = f"Your appointment at {location.name} is confirmed for {date} from {start_time} to {end_time}."
+            send_sms(phone_number, message_body)
+
+            # Notify doctor via SMS
+            if DOCTOR_PHONE:
+                doctor_msg = f"New booking at {location.name}: {date} {start_time}-{end_time} for {email} ({phone_number})."
+                send_sms(DOCTOR_PHONE, doctor_msg)
+
             return JsonResponse({'message': 'Appointment booked successfully'})
 
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
         except Exception as e:
             return JsonResponse({'error': f'An error occurred: {str(e)}'}, status=500)
     else:
@@ -129,44 +161,78 @@ def available_dates(request):
     return JsonResponse({'error': 'Invalid request method'}, status=400)
 
 @api_view(['GET'])
+def available_datesmarked(request):
+    try:
+        year = int(request.GET.get('year'))
+        month = int(request.GET.get('month'))
+
+        # Get all appointments for the given year and month
+        appointments = Appointment.objects.filter(date__year=year, date__month=month)
+
+        # Organize appointments by date
+        booked_dates = defaultdict(list)
+        for appt in appointments:
+            date_str = appt.date.strftime('%Y-%m-%d')
+            booked_dates[date_str].append({
+                'start_time': appt.start_time.strftime('%H:%M'),
+                'end_time': appt.end_time.strftime('%H:%M'),
+                'email': appt.email,
+                'phone_number': appt.phone_number,
+                'slot': str(appt.slot) if appt.slot else None,
+            })
+
+        return JsonResponse({'booked_dates': booked_dates}, status=200)
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@api_view(['GET'])
 def get_available_slots(request):
     """
-    Fetch available slots for a given date.
-    Expects a 'date' parameter in the query string (format: YYYY-MM-DD).
+    Fetch available slots for a given date and optional location.
+    Expects 'date' and optional 'location' parameters.
     """
     try:
-        # Get the 'date' parameter from the query string
         date_str = request.GET.get('date')
-        
+        location_id = request.GET.get('location')
+
         if not date_str:
             return Response({"error": "Date parameter is missing"}, status=400)
 
-        # Parse the date string into a date object (YYYY-MM-DD format)
         date = datetime.strptime(date_str, "%Y-%m-%d").date()
 
-        # Log the date for debugging purposes
-        print("Parsed date:", date)
+        # Start with a base query
+        query = AvailableSlot.objects.filter(date=date, is_booked=False)
 
-        # Filter available slots for the given date
-        available_slots = AvailableSlot.objects.filter(date=date, is_booked=False)
+        # If location is provided, filter by it
+        if location_id:
+            try:
+                location = Location.objects.get(pk=location_id)
+                query = query.filter(location=location)
+            except (Location.DoesNotExist, ValueError):
+                return Response({"error": "Invalid location ID"}, status=400)
 
-        # Prepare the response data with available slots
+        available_slots = query.all()
+
+        # Prepare response data
         slots_data = [
             {
                 'start_time': slot.start_time.strftime("%H:%M"),
                 'end_time': slot.end_time.strftime("%H:%M"),
-                'is_booked': slot.is_booked  # Include the booking status
+                'is_booked': slot.is_booked,
+                'location': slot.location.name if slot.location else None,
+                'location_id': slot.location.id if slot.location else None,
             }
             for slot in available_slots
         ]
 
-        # Return the available slots
         return Response({"available_slots": slots_data})
 
+    except ValueError:
+        return Response({"error": "Invalid date format"}, status=400)
     except Exception as e:
-        # Log the error
-        print("Error:", str(e))
-        return Response({"error": str(e)}, status=400)
+        return Response({"error": str(e)}, status=500)
 
 
 @api_view(['GET', 'POST'])
@@ -175,7 +241,7 @@ def post_available_slots(request):
     Handles both GET and POST requests:
     - GET: Returns a list of available slots
     - POST: Creates available slots for a range of dates and times.
-    Expects JSON input with 'start_date', 'end_date', 'start_time', 'end_time', and 'slot_duration' for POST.
+    Expects JSON input with 'start_date', 'end_date', 'start_time', 'end_time', 'slot_duration', and 'location_id' for POST.
     """
     if request.method == 'GET':
         # Handle GET request: Return available slots (for simplicity, returning all slots)
@@ -191,12 +257,16 @@ def post_available_slots(request):
         data = request.data
         
         # Ensure required fields are present in the request
-        required_fields = ['start_date', 'end_date', 'start_time', 'end_time']
+        required_fields = ['start_date', 'end_date', 'start_time', 'end_time', 'location_id']
         for field in required_fields:
             if field not in data:
                 return Response({"error": f"Missing field: {field}"}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
+            # Get the location
+            location_id = data['location_id']
+            location = Location.objects.get(pk=location_id)
+
             # Parse the dates and times
             start_date = datetime.strptime(data['start_date'], "%Y-%m-%d").date()
             end_date = datetime.strptime(data['end_date'], "%Y-%m-%d").date()
@@ -221,7 +291,8 @@ def post_available_slots(request):
                         date=current_date,
                         start_time=current_time.time(),
                         end_time=next_time.time(),
-                        is_booked=False
+                        is_booked=False,
+                        location=location  # Assign the location
                     )
                     slots.append(slot)
                     current_time = next_time
@@ -231,13 +302,34 @@ def post_available_slots(request):
             # Bulk create the slots in the database
             AvailableSlot.objects.bulk_create(slots)
 
-            return Response({"message": "Slots created successfully"}, status=status.HTTP_201_CREATED)
+            return Response({"message": f"Slots created successfully for {location.name}"}, status=status.HTTP_201_CREATED)
 
+        except Location.DoesNotExist:
+            return Response({"error": "Invalid location ID"}, status=status.HTTP_400_BAD_REQUEST)
         except ValueError as e:
             return Response({"error": f"Invalid date/time format. {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+@api_view(['GET'])
+def get_locations(request):
+    """Returns a list of all office locations."""
+    try:
+        locations = Location.objects.all()
+        locations_data = [
+            {
+                "id": location.id,
+                "name": location.name,
+                "address": location.address
+            }
+            for location in locations
+        ]
+        return Response({"locations": locations_data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
@@ -292,6 +384,10 @@ def appointment_detail(request, pk):
 def calendar_view(request):
     return render(request, 'appointments/calendar.html')
 
+def calendarmark_view(request):
+    return render(request, 'appointments/calendarmark.html')
+
+#List Everything
 def appointment_list_view(request):
     appointments = Appointment.objects.all()
     available_slots = AvailableSlot.objects.all()
@@ -337,4 +433,82 @@ def create_available_slots(start_date, end_date, start_time, end_time):
         current_date += delta
 
 # Example usage:
-#create_available_slots('2025-1-20', '2025-2-28', '16:00:00', '20:00:00')
+#create_available_slots('2025-7-1', '2025-7-31', '16:00:00', '20:00:00')
+
+
+@api_view(['POST'])
+def seed_test_slots(request):
+    """Seed a week of demo slots for testing (next 7 days, 9:00-12:00, 30min)."""
+    try:
+        # Create 4 locations
+        locations_data = [
+            {"name": "Office 1", "address": "123 Main St"},
+            {"name": "Office 2", "address": "456 Oak Ave"},
+            {"name": "Office 3", "address": "789 Pine Ln"},
+            {"name": "Office 4", "address": "101 Maple Dr"},
+        ]
+
+        locations = []
+        for loc_data in locations_data:
+            location, created = Location.objects.get_or_create(name=loc_data['name'], defaults={'address': loc_data['address']})
+            locations.append(location)
+
+        today = datetime.today().date()
+        for d in range(0, 7):
+            current_date = today + timedelta(days=d)
+            start_dt = datetime.combine(current_date, datetime.strptime('09:00', '%H:%M').time())
+            end_dt = datetime.combine(current_date, datetime.strptime('12:00', '%H:%M').time())
+            current = start_dt
+            slots = []
+            
+            # Cycle through locations
+            location_index = 0
+
+            while current < end_dt:
+                next_dt = current + timedelta(minutes=30)
+                
+                # Assign a location to the slot
+                location = locations[location_index % len(locations)]
+                location_index += 1
+
+                # Avoid duplicates
+                if not AvailableSlot.objects.filter(date=current_date, start_time=current.time(), end_time=next_dt.time(), location=location).exists():
+                    slots.append(AvailableSlot(
+                        date=current_date,
+                        start_time=current.time(),
+                        end_time=next_dt.time(),
+                        is_booked=False,
+                        location=location
+                    ))
+                current = next_dt
+            if slots:
+                AvailableSlot.objects.bulk_create(slots)
+                # Retrieve the created slots to link them to appointments
+                created_slots = AvailableSlot.objects.filter(
+                    date__in=[s.date for s in slots],
+                    start_time__in=[s.start_time for s in slots],
+                    end_time__in=[s.end_time for s in slots],
+                    location__in=[s.location for s in slots]
+                )
+                # Create a dictionary for quick lookup of slots
+                slot_lookup = {(s.date, s.start_time, s.end_time, s.location_id): s for s in created_slots}
+
+            # Create appointments for the seeded slots
+            appointments_to_create = []
+            for actual_slot in created_slots:
+                appointments_to_create.append(
+                    Appointment(
+                        date=actual_slot.date,
+                        start_time=actual_slot.start_time,
+                        end_time=actual_slot.end_time,
+                        email=f"test_{actual_slot.date.strftime("%Y%m%d")}_{actual_slot.start_time.strftime("%H%M")}@example.com",
+                        phone_number="555-123-4567",
+                        slot=actual_slot
+                    )
+                )
+            if appointments_to_create:
+                Appointment.objects.bulk_create(appointments_to_create)
+
+        return Response({"message": "Seeded 7 days of demo slots (9:00-12:00, 30min) with 4 locations and created appointments"}, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

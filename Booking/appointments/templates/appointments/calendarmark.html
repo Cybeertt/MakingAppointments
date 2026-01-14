@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Calendar</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="font-sans bg-gray-50 min-h-screen flex flex-col items-center p-6">
+    <h1 class="text-2xl sm:text-3xl font-bold text-gray-800 mb-6">Custom Calendar</h1>
+    <div id="calendar" class="w-full max-w-3xl bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+        <div class="calendar-header flex items-center justify-between mb-4">
+            <button id="prev" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Previous</button>
+            <h2 id="month-year" class="text-xl font-semibold text-gray-700"></h2>
+            <button id="next" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Next</button>
+        </div>
+        <div class="calendar-days grid grid-cols-7 gap-2 text-center" id="calendar-days"></div>
+    </div>
+
+    <div id="details-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center">
+        <div class="absolute inset-0 bg-black/40" onclick="document.getElementById('details-modal').classList.add('hidden')"></div>
+        <div class="relative bg-white w-full max-w-lg p-6 rounded-lg shadow-lg">
+            <button onclick="document.getElementById('details-modal').classList.add('hidden')" class="absolute top-3 right-3 bg-red-600 text-white px-2 py-1 rounded">X</button>
+            <div id="booking-details"></div>
+        </div>
+    </div>
+
+    <script>
+        const calendarDays = document.getElementById('calendar-days');
+        const monthYear = document.getElementById('month-year');
+        const prevButton = document.getElementById('prev');
+        const nextButton = document.getElementById('next');
+
+        let date = new Date();
+
+        function renderCalendar() {
+            const currentMonth = date.getMonth();
+            const currentYear = date.getFullYear();
+            const today = new Date();
+
+            const monthNames = [
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"
+            ];
+
+            monthYear.textContent = `${monthNames[currentMonth]} ${currentYear}`;
+            calendarDays.innerHTML = '';
+
+            const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+            const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+            fetch(`/appointments/available-datesmarked/?year=${currentYear}&month=${currentMonth + 1}`)
+                .then(response => response.json())
+                .then(data => {
+                    const bookedDates = data.booked_dates || {};
+
+                    for (let i = 0; i < firstDay; i++) {
+                        const blankDay = document.createElement('div');
+                        blankDay.classList.add('day', 'px-2', 'py-3');
+                        calendarDays.appendChild(blankDay);
+                    }
+
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        const dayElement = document.createElement('div');
+                        dayElement.classList.add('day', 'relative', 'px-2', 'py-3', 'rounded', 'cursor-pointer', 'hover:bg-blue-100');
+                        dayElement.textContent = day;
+
+                        const dateToCheck = new Date(currentYear, currentMonth, day);
+                        const formattedDate = dateToCheck.toISOString().split('T')[0];
+
+                        if (formattedDate in bookedDates) {
+                            dayElement.classList.add('booked', 'bg-red-100');
+                            const dot = document.createElement('span');
+                            dot.classList.add('absolute', 'left-1/2', '-translate-x-1/2', 'bottom-1', 'w-2', 'h-2', 'bg-blue-600', 'rounded-full');
+                            dayElement.appendChild(dot);
+                            dayElement.addEventListener('click', () => showBookingDetails(formattedDate, bookedDates[formattedDate]));
+                        }
+
+                        if (
+                            day === today.getDate() &&
+                            currentMonth === today.getMonth() &&
+                            currentYear === today.getFullYear()
+                        ) {
+                            dayElement.classList.add('today', 'ring-2', 'ring-blue-500');
+                        }
+
+                        calendarDays.appendChild(dayElement);
+                    }
+                });
+        }
+
+        function showBookingDetails(date, bookings) {
+            let detailsHtml = `<h3 class=\"text-lg font-semibold mb-2\">Appointments on ${date}</h3>`;
+            bookings.forEach(booking => {
+                detailsHtml += `
+                    <div class=\"mb-4\">
+                        <p><strong>Time:</strong> ${booking.start_time} - ${booking.end_time}</p>
+                        <p><strong>Email:</strong> ${booking.email}</p>
+                        <p><strong>Phone:</strong> ${booking.phone_number}</p>
+                    </div>
+                    <hr class=\"my-2\"/>
+                `;
+            });
+            document.getElementById('booking-details').innerHTML = detailsHtml;
+            document.getElementById('details-modal').classList.remove('hidden');
+        }
+
+        prevButton.addEventListener('click', () => {
+            date.setMonth(date.getMonth() - 1);
+            renderCalendar();
+        });
+
+        nextButton.addEventListener('click', () => {
+            date.setMonth(date.getMonth() + 1);
+            renderCalendar();
+        });
+
+        renderCalendar();
+    </script>
+</body>
+</html>

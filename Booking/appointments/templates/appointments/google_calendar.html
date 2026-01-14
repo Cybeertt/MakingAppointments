@@ -1,0 +1,43 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appointment Calendar</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="font-sans bg-gray-50 min-h-screen flex flex-col items-center p-6">
+    <h1 class="text-2xl sm:text-3xl font-bold text-gray-800 mb-6">Appointment Calendar</h1>
+
+    <div id="calendar" class="w-full max-w-3xl bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+        <div class="calendar-header flex items-center justify-between mb-4">
+            <button id="prev" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Previous</button>
+            <h2 id="month-year" class="text-xl font-semibold text-gray-700"></h2>
+            <button id="next" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Next</button>
+        </div>
+        <div class="calendar-days grid grid-cols-7 gap-2 text-center" id="calendar-days">
+            <!-- Days will be dynamically added here -->
+        </div>
+    </div>
+
+    <div id="time-slots" class="hidden w-full max-w-3xl mt-6">
+        <h3 class="text-xl font-semibold text-gray-800 mb-3">Available Time Slots</h3>
+        <div id="time-slots-list" class="flex flex-wrap gap-2"></div>
+    </div>
+
+    <script src="{% static 'js/calendar.js' %}"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const mockData = {
+                available_slots: [
+                    { start: "2024-12-23T09:00:00", end: "2024-12-23T09:30:00" },
+                    { start: "2024-12-23T10:00:00", end: "2024-12-23T10:30:00" },
+                ]
+            };
+
+            renderCalendar(mockData.available_slots);
+        });
+    </script>
+</body>
+</html>
