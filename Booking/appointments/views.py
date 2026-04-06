@@ -12,7 +12,10 @@ import json
 import os
 from django.http import JsonResponse
 from .serializers import AppointmentSerializer, AvailableSlotSerializer
-from twilio.rest import Client
+try:
+    from twilio.rest import Client  # type: ignore
+except ImportError:
+    Client = None
 
 # Path to your credentials file
 CREDENTIALS_FILE = os.path.join(os.path.dirname(__file__), 'google_credentials.json')
@@ -23,7 +26,7 @@ TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN')
 TWILIO_FROM_NUMBER = os.environ.get('TWILIO_FROM_NUMBER')
 DOCTOR_PHONE = os.environ.get('DOCTOR_PHONE')  # Doctor's phone for notifications
 
-client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN else None
+client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if Client and TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN else None
 
 def send_sms(to_phone_number, message_body):
     if not client or not TWILIO_FROM_NUMBER:
@@ -72,6 +75,7 @@ def book_appointment(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
+            name = data.get('name')
             email = data.get('email')
             phone_number = data.get('phone_number')
             date = data.get('date')
@@ -97,27 +101,32 @@ def book_appointment(request):
             except AvailableSlot.DoesNotExist:
                 return JsonResponse({'error': 'Selected slot not available or already booked'}, status=400)
 
+            # Send confirmation SMS to patient
+            display_name = name if name else email
+            message_body = f"Your appointment at {location.name} is confirmed for {date} from {start_time} to {end_time}, {display_name}."
+            
+            patient_sms_sid = send_sms(phone_number, message_body)
+            if not patient_sms_sid:
+                return JsonResponse({'error': 'Failed to send confirmation SMS. Appointment not booked.'}, status=500)
+
             # Create the appointment
             appointment = Appointment.objects.create(
+                patient_name=name,
                 email=email,
                 phone_number=phone_number,
                 date=date,
                 start_time=start_time,
                 end_time=end_time,
-                slot=slot  # Link to the slot
+                slot=slot, # Link the appointment to the slot
             )
 
             # Mark the slot as booked
             slot.is_booked = True
             slot.save()
 
-            # Send confirmation SMS to patient
-            message_body = f"Your appointment at {location.name} is confirmed for {date} from {start_time} to {end_time}."
-            send_sms(phone_number, message_body)
-
             # Notify doctor via SMS
             if DOCTOR_PHONE:
-                doctor_msg = f"New booking at {location.name}: {date} {start_time}-{end_time} for {email} ({phone_number})."
+                doctor_msg = f"New booking at {location.name}: {date} {start_time}-{end_time} for {display_name} ({phone_number})."
                 send_sms(DOCTOR_PHONE, doctor_msg)
 
             return JsonResponse({'message': 'Appointment booked successfully'})
@@ -145,13 +154,22 @@ def available_dates(request):
             # Parse the year and month from request parameters
             year = int(request.GET.get('year'))
             month = int(request.GET.get('month'))
+            location_id = request.GET.get('location')
 
             # Query for available slots in the given month
-            available_slots = AvailableSlot.objects.filter(
+            query = AvailableSlot.objects.filter(
                 date__year=year,
                 date__month=month,
                 is_booked=False
-            ).values_list('date', flat=True).distinct()
+            )
+            if location_id:
+                try:
+                    location = Location.objects.get(pk=int(location_id))
+                    query = query.filter(location=location)
+                except (Location.DoesNotExist, ValueError):
+                    return JsonResponse({'error': 'Invalid location'}, status=400)
+
+            available_slots = query.values_list('date', flat=True).distinct()
 
             # Convert dates to a list of strings (ISO format for easier parsing in JS)
             available_dates = [date.strftime('%Y-%m-%d') for date in available_slots]
@@ -176,6 +194,7 @@ def available_datesmarked(request):
             booked_dates[date_str].append({
                 'start_time': appt.start_time.strftime('%H:%M'),
                 'end_time': appt.end_time.strftime('%H:%M'),
+                'name': appt.patient_name,
                 'email': appt.email,
                 'phone_number': appt.phone_number,
                 'slot': str(appt.slot) if appt.slot else None,
@@ -454,6 +473,7 @@ def seed_test_slots(request):
             locations.append(location)
 
         today = datetime.today().date()
+        all_created_slots = []
         for d in range(0, 7):
             current_date = today + timedelta(days=d)
             start_dt = datetime.combine(current_date, datetime.strptime('09:00', '%H:%M').time())
@@ -484,30 +504,28 @@ def seed_test_slots(request):
             if slots:
                 AvailableSlot.objects.bulk_create(slots)
                 # Retrieve the created slots to link them to appointments
-                created_slots = AvailableSlot.objects.filter(
+                created_slots_for_day = AvailableSlot.objects.filter(
                     date__in=[s.date for s in slots],
                     start_time__in=[s.start_time for s in slots],
                     end_time__in=[s.end_time for s in slots],
                     location__in=[s.location for s in slots]
                 )
-                # Create a dictionary for quick lookup of slots
-                slot_lookup = {(s.date, s.start_time, s.end_time, s.location_id): s for s in created_slots}
+                all_created_slots.extend(list(created_slots_for_day))
 
-            # Create appointments for the seeded slots
+        if all_created_slots:
             appointments_to_create = []
-            for actual_slot in created_slots:
+            for actual_slot in all_created_slots:
                 appointments_to_create.append(
                     Appointment(
                         date=actual_slot.date,
                         start_time=actual_slot.start_time,
                         end_time=actual_slot.end_time,
-                        email=f"test_{actual_slot.date.strftime("%Y%m%d")}_{actual_slot.start_time.strftime("%H%M")}@example.com",
+                        email=f"test_{actual_slot.date.strftime('%Y%m%d')}_{actual_slot.start_time.strftime('%H%M')}@example.com",
                         phone_number="555-123-4567",
                         slot=actual_slot
                     )
                 )
-            if appointments_to_create:
-                Appointment.objects.bulk_create(appointments_to_create)
+            Appointment.objects.bulk_create(appointments_to_create)
 
         return Response({"message": "Seeded 7 days of demo slots (9:00-12:00, 30min) with 4 locations and created appointments"}, status=status.HTTP_201_CREATED)
     except Exception as e:

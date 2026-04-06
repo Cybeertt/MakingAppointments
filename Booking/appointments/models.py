@@ -19,6 +19,7 @@ class Appointment(models.Model):
     date = models.DateField()
     start_time = models.TimeField()
     end_time = models.TimeField()
+    patient_name = models.CharField(max_length=100, null=True, blank=True)
     email = models.EmailField()
     phone_number = models.CharField(max_length=15)
     slot = models.ForeignKey(AvailableSlot, on_delete=models.SET_NULL, null=True, blank=True, related_name='appointments')

@@ -3,7 +3,9 @@ from django.contrib import admin
 from .models import Appointment, AvailableSlot, Location
 
 class AppointmentAdmin(admin.ModelAdmin):
-    list_display = ['date', 'hour', 'minute', 'email', 'phone_number']
+    list_display = ['date', 'hour', 'minute', 'patient_name', 'email', 'phone_number', 'location']
+    list_filter = ['date', 'slot__location']
+    search_fields = ['patient_name', 'email', 'phone_number']
 
     def hour(self, obj):
         return obj.start_time.hour
@@ -14,6 +16,10 @@ class AppointmentAdmin(admin.ModelAdmin):
         return obj.start_time.minute
     minute.admin_order_field = 'start_time'
     minute.short_description = 'Minute'
+    
+    def location(self, obj):
+        return getattr(getattr(obj.slot, 'location', None), 'name', None)
+    location.short_description = 'Location'
 
 class AvailableSlotAdmin(admin.ModelAdmin):
     list_display = ['date', 'start_time', 'end_time', 'location', 'is_booked']

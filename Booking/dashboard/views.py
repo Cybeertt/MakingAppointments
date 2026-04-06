@@ -7,7 +7,7 @@ def index(request):
     events = []
     for appointment in appointments:
         events.append({
-            'title': f'{appointment.email} - {appointment.slot.location.name}',
+            'title': f'{(appointment.patient_name or appointment.email)} - {(appointment.slot.location.name if appointment.slot and appointment.slot.location else "No location")}',
             'start': f'{appointment.date}T{appointment.start_time}',
             'end': f'{appointment.date}T{appointment.end_time}',
             'id': appointment.id,

@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState, useMemo } from 'react';
-import { StyleSheet, Text, View, FlatList, TouchableOpacity, TextInput, Alert, Platform, Image } from 'react-native';
+import { StyleSheet, Text, View, FlatList, TouchableOpacity, TextInput, Alert, Platform, Image, ScrollView } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import NetInfo from '@react-native-community/netinfo';
 
@@ -188,108 +188,114 @@ export default function App() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Osteopath Booking</Text>
-      {!isOnline && (
-        <View style={styles.offlineBanner}>
-          <Text style={styles.offlineText}>Sem internet: verifique a ligação Wi‑Fi</Text>
-        </View>
-      )}
-      {renderTasks()}
-
-      <Text style={styles.sectionTitle}>Select a Location</Text>
-      <FlatList
-        data={locations}
-        keyExtractor={(item) => item.id.toString()}
-        horizontal
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[
-              styles.locationBtn,
-              selectedLocation === item.id && styles.locationBtnSelected,
-            ]}
-            onPress={() => setSelectedLocation(item.id)}
-          >
-            <Text style={styles.locationText}>{item.name}</Text>
-          </TouchableOpacity>
-        )}
-        style={{ maxHeight: 60 }}
-      />
-
-      {selectedLocation && (
-        <View>
-          <Text style={styles.sectionTitle}>Calendar</Text>
-          <Calendar
-            minDate={todayStr}
-            markedDates={markedDates}
-            enableSwipeMonths={true}
-            hideExtraDays={false}
-            onDayPress={(day) => {
-              const { dateString } = day;
-              setSelectedDate(dateString);
-              fetchSlotsForDate(dateString);
-            }}
-            onMonthChange={(m) => {
-              setYear(m.year);
-              setMonth(m.month);
-            }}
-          />
-        </View>
-      )}
-
-      {selectedDate && (
-        <View>
-          <Text style={styles.sectionTitle}>Slots on {selectedDate}</Text>
-          <FlatList
-            data={slots}
-            keyExtractor={(item, idx) => `${item.start_time}-${idx}`}
-            horizontal
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[styles.slotBtn, selectedSlot?.start_time === item.start_time && styles.slotBtnSelected]}
-                onPress={() => setSelectedSlot(item)}
-              >
-                <Text style={styles.slotText}>{item.start_time}</Text>
-              </TouchableOpacity>
-            )}
-            style={{ maxHeight: 60 }}
-          />
-
-          <View style={styles.form}>
-            <TextInput
-              placeholder="Name"
-              value={name}
-              onChangeText={setName}
-              style={styles.input}
-            />
-            <TextInput
-              placeholder="Email"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              style={styles.input}
-            />
-            <TextInput
-              placeholder="Phone"
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-              style={styles.input}
-            />
-            <TouchableOpacity style={styles.bookBtn} onPress={bookAppointment}>
-              <Text style={styles.bookBtnText}>Book Appointment</Text>
-            </TouchableOpacity>
+    <ScrollView style={styles.scrollViewContainer}>
+      <View style={styles.container}>
+        <Text style={styles.title}>Osteopath Booking</Text>
+        {!isOnline && (
+          <View style={styles.offlineBanner}>
+            <Text style={styles.offlineText}>Sem internet: verifique a ligação Wi‑Fi</Text>
           </View>
-        </View>
-      )}
+        )}
+        {renderTasks()}
 
-      <StatusBar style="auto" />
-    </View>
+        <Text style={styles.sectionTitle}>Select a Location</Text>
+        {isOnline && locations.length === 0 && (
+          <Text style={styles.emptyText}>No locations available. Please add locations in admin.</Text>
+        )}
+        <FlatList
+          data={locations}
+          keyExtractor={(item) => item.id.toString()}
+          horizontal
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[
+                styles.locationBtn,
+                selectedLocation === item.id && styles.locationBtnSelected,
+              ]}
+              onPress={() => setSelectedLocation(item.id)}
+            >
+              <Text style={styles.locationText}>{item.name}</Text>
+            </TouchableOpacity>
+          )}
+          style={{ maxHeight: 60 }}
+        />
+
+        {selectedLocation && (
+          <View>
+            <Text style={styles.sectionTitle}>Calendar</Text>
+            <Calendar
+              minDate={todayStr}
+              markedDates={markedDates}
+              enableSwipeMonths={true}
+              hideExtraDays={false}
+              onDayPress={(day) => {
+                const { dateString } = day;
+                setSelectedDate(dateString);
+                fetchSlotsForDate(dateString);
+              }}
+              onMonthChange={(m) => {
+                setYear(m.year);
+                setMonth(m.month);
+              }}
+            />
+          </View>
+        )}
+
+        {selectedDate && (
+          <View>
+            <Text style={styles.sectionTitle}>Slots on {selectedDate}</Text>
+            <FlatList
+              data={slots}
+              keyExtractor={(item, idx) => `${item.start_time}-${idx}`}
+              horizontal
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.slotBtn, selectedSlot?.start_time === item.start_time && styles.slotBtnSelected]}
+                  onPress={() => setSelectedSlot(item)}
+                >
+                  <Text style={styles.slotText}>{item.start_time}</Text>
+                </TouchableOpacity>
+              )}
+              style={{ maxHeight: 60 }}
+            />
+
+            <View style={styles.form}>
+              <TextInput
+                placeholder="Name"
+                value={name}
+                onChangeText={setName}
+                style={styles.input}
+              />
+              <TextInput
+                placeholder="Email"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                style={styles.input}
+              />
+              <TextInput
+                placeholder="Phone"
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+                style={styles.input}
+              />
+              <TouchableOpacity style={styles.bookBtn} onPress={bookAppointment}>
+                <Text style={styles.bookBtnText}>Book Appointment</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        <StatusBar style="auto" />
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', paddingTop: 40, paddingHorizontal: 16 },
+  scrollViewContainer: { flex: 1, backgroundColor: '#fff' },
+  container: { paddingTop: 40, paddingHorizontal: 16 },
   title: { fontSize: 22, fontWeight: '700', marginBottom: 8 },
   offlineBanner: { backgroundColor: '#fee2e2', borderColor: '#ef4444', borderWidth: 1, padding: 8, borderRadius: 6, marginBottom: 8 },
   offlineText: { color: '#b91c1c', fontWeight: '600' },
@@ -334,4 +340,5 @@ const styles = StyleSheet.create({
   taskDone: { color: '#16a34a', textDecorationLine: 'line-through' },
   startBtn: { backgroundColor: '#2563eb', paddingVertical: 12, borderRadius: 8, alignItems: 'center', width: '100%' },
   startBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  emptyText: { color: '#6b7280', marginBottom: 8 },
 });
