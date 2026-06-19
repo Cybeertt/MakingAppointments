@@ -1,6 +1,5 @@
-# appointments/admin.py
 from django.contrib import admin
-from .models import Appointment, AvailableSlot, Location
+from .models import Appointment, AvailableSlot, Location, SmsMessage
 
 class AppointmentAdmin(admin.ModelAdmin):
     list_display = ['date', 'hour', 'minute', 'patient_name', 'email', 'phone_number', 'location']
@@ -33,3 +32,4 @@ class LocationAdmin(admin.ModelAdmin):
 admin.site.register(Appointment, AppointmentAdmin)
 admin.site.register(AvailableSlot, AvailableSlotAdmin)
 admin.site.register(Location, LocationAdmin)
+admin.site.register(SmsMessage)

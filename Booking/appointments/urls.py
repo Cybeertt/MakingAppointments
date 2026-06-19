@@ -16,5 +16,9 @@ urlpatterns = [
     path('book-appointment/', views.book_appointment, name='book_appointment'),
     path('seed-test-slots/', views.seed_test_slots, name='seed_test_slots'),
     path('locations/', views.get_locations, name='get_locations'),
+    path('twilio/status/', views.twilio_status, name='twilio_status'),
+    path('twilio/messages/', views.twilio_messages, name='twilio_messages'),
+    path('twilio/send-test/', views.twilio_send_test, name='twilio_send_test'),
+    path('twilio/inbound-sms/', views.twilio_inbound_sms, name='twilio_inbound_sms'),
 ]
-
+

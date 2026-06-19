@@ -24,3 +24,18 @@ class Appointment(models.Model):
     phone_number = models.CharField(max_length=15)
     slot = models.ForeignKey(AvailableSlot, on_delete=models.SET_NULL, null=True, blank=True, related_name='appointments')
 
+
+class SmsMessage(models.Model):
+    direction = models.CharField(max_length=10)
+    from_number = models.CharField(max_length=32, null=True, blank=True)
+    to_number = models.CharField(max_length=32, null=True, blank=True)
+    body = models.TextField(blank=True)
+    twilio_sid = models.CharField(max_length=64, null=True, blank=True)
+    status = models.CharField(max_length=32, null=True, blank=True)
+    error = models.TextField(null=True, blank=True)
+    payload = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+

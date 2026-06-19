@@ -30,6 +30,9 @@ export default function App() {
   const [locations, setLocations] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [isOnline, setIsOnline] = useState(true);
+  const [testSmsTo, setTestSmsTo] = useState('');
+  const [testSmsMessage, setTestSmsMessage] = useState('Hello from Osteopath Booking');
+  const [sendingTestSms, setSendingTestSms] = useState(false);
   const [tasks, setTasks] = useState([
     { id: 'location', label: 'Select a location', done: false },
     { id: 'date', label: 'Select a date', done: false },
@@ -132,6 +135,38 @@ export default function App() {
         console.error('Error booking appointment:', err);
         Alert.alert('Error', 'Failed to book appointment');
       });
+  };
+
+  const sendTestSms = async () => {
+    if (!isOnline) return Alert.alert('Sem ligação', 'Está offline. Ligue-se ao Wi‑Fi.');
+    if (!testSmsTo || !testSmsMessage) return Alert.alert('Error', 'Please fill in To and Message');
+
+    const internalToken = process.env.EXPO_PUBLIC_INTERNAL_API_TOKEN;
+    setSendingTestSms(true);
+    try {
+      const res = await fetch(`${API_BASE}/appointments/twilio/send-test/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(internalToken ? { 'X-Internal-Token': internalToken } : {}),
+        },
+        body: JSON.stringify({ to: testSmsTo, message: testSmsMessage }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return Alert.alert('Error', data?.error || `HTTP ${res.status}`);
+      }
+      if (data?.sent) {
+        Alert.alert('Success', `Sent. SID: ${data?.sid || ''}`.trim());
+      } else {
+        Alert.alert('Error', 'Not sent (Twilio not configured)');
+      }
+    } catch (e) {
+      console.error('Error sending test SMS:', e);
+      Alert.alert('Error', 'Failed to send test SMS');
+    } finally {
+      setSendingTestSms(false);
+    }
   };
 
   const renderTasks = () => {
@@ -287,6 +322,30 @@ export default function App() {
           </View>
         )}
 
+        <View style={styles.twilioBox}>
+          <Text style={styles.sectionTitle}>Test SMS</Text>
+          <TextInput
+            placeholder="To phone (e.g. +15551234567)"
+            value={testSmsTo}
+            onChangeText={setTestSmsTo}
+            keyboardType="phone-pad"
+            style={styles.input}
+          />
+          <TextInput
+            placeholder="Message"
+            value={testSmsMessage}
+            onChangeText={setTestSmsMessage}
+            style={styles.input}
+          />
+          <TouchableOpacity
+            style={[styles.bookBtn, sendingTestSms && styles.bookBtnDisabled]}
+            onPress={sendTestSms}
+            disabled={sendingTestSms}
+          >
+            <Text style={styles.bookBtnText}>{sendingTestSms ? 'Sending...' : 'Send Test SMS'}</Text>
+          </TouchableOpacity>
+        </View>
+
         <StatusBar style="auto" />
       </View>
     </ScrollView>
@@ -323,6 +382,8 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 6, padding: 10, marginBottom: 8 },
   bookBtn: { backgroundColor: '#16a34a', paddingVertical: 10, borderRadius: 6, alignItems: 'center' },
   bookBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  bookBtnDisabled: { opacity: 0.7 },
+  twilioBox: { marginTop: 16, marginBottom: 16 },
   // Intro styles
   introContainer: { flex: 1, backgroundColor: '#fff', paddingTop: 60, paddingHorizontal: 20, alignItems: 'center' },
   introTitle: { fontSize: 24, fontWeight: '800', marginBottom: 8 },

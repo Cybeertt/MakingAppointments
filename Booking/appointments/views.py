@@ -1,21 +1,25 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
+from django.conf import settings
 from django.shortcuts import render
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Count
-from .models import Appointment, AvailableSlot, Location
+from .models import Appointment, AvailableSlot, Location, SmsMessage
 import json
 import os
-from django.http import JsonResponse
-from .serializers import AppointmentSerializer, AvailableSlotSerializer
+from .serializers import AppointmentSerializer, AvailableSlotSerializer, SmsMessageSerializer
 try:
     from twilio.rest import Client  # type: ignore
+    from twilio.twiml.messaging_response import MessagingResponse  # type: ignore
+    from twilio.request_validator import RequestValidator  # type: ignore
 except ImportError:
     Client = None
+    MessagingResponse = None
+    RequestValidator = None
 
 # Path to your credentials file
 CREDENTIALS_FILE = os.path.join(os.path.dirname(__file__), 'google_credentials.json')
@@ -29,18 +33,112 @@ DOCTOR_PHONE = os.environ.get('DOCTOR_PHONE')  # Doctor's phone for notification
 client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if Client and TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN else None
 
 def send_sms(to_phone_number, message_body):
-    if not client or not TWILIO_FROM_NUMBER:
-        return None
+    sms_row = SmsMessage(
+        direction='outbound',
+        from_number=TWILIO_FROM_NUMBER,
+        to_number=to_phone_number,
+        body=message_body,
+        status='created',
+    )
     try:
+        if not client or not TWILIO_FROM_NUMBER:
+            raise RuntimeError('Twilio client is not configured')
         message = client.messages.create(
             body=message_body,
             from_=TWILIO_FROM_NUMBER,
             to=to_phone_number
         )
+        sms_row.twilio_sid = getattr(message, 'sid', None)
+        sms_row.status = 'sent'
+        sms_row.save()
         return message.sid
-    except Exception:
-        # Optionally log the error; return None to avoid breaking booking flow
+    except Exception as e:
+        sms_row.status = 'failed'
+        sms_row.error = str(e)
+        sms_row.save()
         return None
+
+
+def _internal_authorized(request):
+    required_token = os.environ.get('INTERNAL_API_TOKEN')
+    if not required_token:
+        return bool(getattr(settings, 'DEBUG', False))
+    provided_token = request.headers.get('X-Internal-Token')
+    return provided_token == required_token
+
+
+@api_view(['GET'])
+def twilio_status(request):
+    last_message = SmsMessage.objects.first()
+    return Response(
+        {
+            'twilio_configured': bool(client and TWILIO_FROM_NUMBER),
+            'twilio_from_number': TWILIO_FROM_NUMBER,
+            'has_twilio_auth_token': bool(TWILIO_AUTH_TOKEN),
+            'messages_count': SmsMessage.objects.count(),
+            'last_message_at': getattr(last_message, 'created_at', None),
+        }
+    )
+
+
+@api_view(['GET'])
+def twilio_messages(request):
+    try:
+        limit = int(request.GET.get('limit', '50'))
+    except ValueError:
+        limit = 50
+    limit = max(1, min(limit, 200))
+    messages = SmsMessage.objects.all()[:limit]
+    serializer = SmsMessageSerializer(messages, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+def twilio_send_test(request):
+    if not _internal_authorized(request):
+        return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+    to_number = request.data.get('to')
+    message_body = request.data.get('message')
+    if not to_number or not message_body:
+        return Response({'error': 'Missing to/message'}, status=status.HTTP_400_BAD_REQUEST)
+    sid = send_sms(to_number, message_body)
+    return Response({'sent': bool(sid), 'sid': sid})
+
+
+@csrf_exempt
+def twilio_inbound_sms(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+    if RequestValidator and TWILIO_AUTH_TOKEN:
+        signature = request.META.get('HTTP_X_TWILIO_SIGNATURE')
+        if signature:
+            validator = RequestValidator(TWILIO_AUTH_TOKEN)
+            url = request.build_absolute_uri()
+            params = {k: request.POST.get(k) for k in request.POST.keys()}
+            if not validator.validate(url, params, signature):
+                return HttpResponse(status=403)
+
+    from_number = request.POST.get('From')
+    to_number = request.POST.get('To')
+    body = request.POST.get('Body', '')
+    message_sid = request.POST.get('MessageSid')
+    payload = {k: request.POST.getlist(k) if len(request.POST.getlist(k)) > 1 else request.POST.get(k) for k in request.POST.keys()}
+
+    SmsMessage.objects.create(
+        direction='inbound',
+        from_number=from_number,
+        to_number=to_number,
+        body=body,
+        twilio_sid=message_sid,
+        status='received',
+        payload=payload,
+    )
+
+    if MessagingResponse:
+        resp = MessagingResponse()
+        return HttpResponse(str(resp), content_type='text/xml')
+    return HttpResponse('<Response></Response>', content_type='text/xml')
 
 
 
@@ -106,8 +204,6 @@ def book_appointment(request):
             message_body = f"Your appointment at {location.name} is confirmed for {date} from {start_time} to {end_time}, {display_name}."
             
             patient_sms_sid = send_sms(phone_number, message_body)
-            if not patient_sms_sid:
-                return JsonResponse({'error': 'Failed to send confirmation SMS. Appointment not booked.'}, status=500)
 
             # Create the appointment
             appointment = Appointment.objects.create(
@@ -129,7 +225,7 @@ def book_appointment(request):
                 doctor_msg = f"New booking at {location.name}: {date} {start_time}-{end_time} for {display_name} ({phone_number})."
                 send_sms(DOCTOR_PHONE, doctor_msg)
 
-            return JsonResponse({'message': 'Appointment booked successfully'})
+            return JsonResponse({'message': 'Appointment booked successfully', 'sms_sent': bool(patient_sms_sid), 'sms_sid': patient_sms_sid})
 
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
